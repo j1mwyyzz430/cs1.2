@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forest Night: Reforged (Laser Update)</title>
+    <title>Forest Night: Final Awakening</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Arial, sans-serif; user-select: none; }
         
@@ -127,7 +127,7 @@
         <div id="flight-controls">SPACE: 上升 | SHIFT: 下降 | WASD: 飛行</div>
 
         <div id="hud-bottom">
-            <div class="hud-box"><span class="hud-label">HEALTH</span><span class="hud-value c-green" id="hp-val">100</span></div>
+            <div class="hud-box"><span class="hud-label">HEALTH</span><span class="hud-value c-green" id="hp-val">100</span><span style="font-size:12px;color:#666;"> / <span id="max-hp-val">100</span></span></div>
             <div class="hud-box"><span class="hud-label">ARMOR</span><span class="hud-value c-blue" id="armor-val">0</span></div>
             <div class="hud-box"><span class="hud-label">MONEY</span><span class="hud-value c-yellow" id="money-val">$0</span></div>
             <div class="hud-box"><span class="hud-label">WAVE</span><span class="hud-value" id="wave-val">1</span></div>
@@ -146,7 +146,7 @@
             <div class="shop-item">
                 <div>
                     <div style="color:#0f0; font-weight:bold;">M249 機槍</div>
-                    <div style="font-size:12px; color:#aaa;">射速極快，彈藥傾瀉</div>
+                    <div style="font-size:12px; color:#aaa;">射速極快，傷害提升</div>
                 </div>
                 <button onclick="buyWeapon('m249', 1000)">$1000</button>
             </div>
@@ -155,7 +155,7 @@
                     <div style="color:#f00; font-weight:bold;">RPG 火箭筒</div>
                     <div style="font-size:12px; color:#aaa;">範圍爆炸，威力巨大</div>
                 </div>
-                <button onclick="buyWeapon('rpg', 2000)">$2000</button>
+                <button onclick="buyWeapon('rpg', 5000)">$5000</button>
             </div>
             <div class="shop-item">
                 <div>
@@ -180,11 +180,11 @@
         <div class="controls">
             <p><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 移動 <span class="key">SHIFT</span> 加速/高跳</p>
             <p><span class="key">左鍵</span> 射擊/攻擊</p>
-            <p><span class="key">右鍵</span> 武器特殊技能 (斧頭旋風/手槍無效)</p>
+            <p><span class="key">右鍵</span> 武器特殊技能</p>
             <p><span class="key">1</span><span class="key">2</span><span class="key">3</span> 切換武器</p>
             <p><span class="key">B</span> 商店</p>
         </div>
-        <p style="margin-top: 30px; font-size: 20px; color: #aaa;">點擊畫面開始生存</p>
+        <p style="margin-top: 30px; font-size: 20px; color: #aaa;">點擊畫面開始生存 (聲音開啟)</p>
     </div>
 
     <div id="death-screen">
@@ -235,20 +235,141 @@
         chestRef: null,
         canFly: false,
         currentStage: STAGE.FOREST,
-        lastDamageTime: 0
+        lastDamageTime: 0,
+        audioInitialized: false
     };
 
+    // [FIX] 最終月牙天衝：傷害100
     const WEAPON_DEFS = {
         ak:   { name: "AK-47",  damage: 35,   rate: 180,  range: 100, type: 'hitscan', color: 0xffaa00, model: 'rifle', knockback: 0.8 },
-        m249: { name: "M249",   damage: 25,   rate: 60,   range: 100, type: 'hitscan', color: 0x00ff00, model: 'm249', knockback: 0.6 },
+        m249: { name: "M249",   damage: 38,   rate: 60,   range: 100, type: 'hitscan', color: 0x00ff00, model: 'm249', knockback: 0.6 },
         rpg:  { name: "RPG",    damage: 800,  rate: 1200, range: 200, type: 'explosive', color: 0xff0000, model: 'rpg', knockback: 5.0 },
         pistol:{ name: "LASER PISTOL",damage: 15,   rate: 400,  range: 50,  type: 'laser', color: 0x00ffff, model: 'pistol', knockback: 8.0 }, 
         axe:  { name: "Axe",    damage: 150,  rate: 600,  range: 5,   type: 'melee',   color: 0xffffff, model: 'axe', knockback: 3.0 },
         moon: { name: "MOON BLADE", damage: 150, rate: 800, range: 200, type: 'projectile', color: 0x00ffff, model: 'moon', knockback: 40.0 }, 
-        final_moon: { name: "FINAL TENSA", damage: 1000, rate: 300, range: 10, type: 'melee', color: 0x000000, model: 'final_moon', knockback: 100.0 }
+        final_moon: { name: "FINAL TENSA", damage: 100, rate: 1, range: 50, type: 'melee', color: 0x000000, model: 'final_moon', knockback: 1.0 }
     };
 
     let inventory = [WEAPON_DEFS.ak, WEAPON_DEFS.pistol, WEAPON_DEFS.axe];
+
+    // --- Audio System ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.1; 
+    masterGain.connect(audioCtx.destination);
+
+    // [FIX] 使用用戶提供的 MP3
+    let bgmElement = new Audio("https://pfst.cf2.poecdn.net/base/audio/d9c7b04543891693265a141227047db8159a204b011d5c222380a36f675e2439");
+    bgmElement.loop = true;
+    bgmElement.volume = 0.4;
+
+    let spaceOscillators = [];
+    let spaceGain = null;
+
+    function initAudio() {
+        if (STATE.audioInitialized) return;
+        STATE.audioInitialized = true;
+        // 播放 MP3
+        bgmElement.play().catch(e => console.log("Audio play failed", e));
+    }
+
+    // [FIX] 音樂風格切換系統
+    function playSpaceMusic(style = 'normal') {
+        // 停止之前的程序化音樂
+        stopSpaceMusic(false); // false = don't fade out slowly, switch immediately
+        
+        spaceGain = audioCtx.createGain();
+        spaceGain.gain.value = 0; 
+        spaceGain.connect(masterGain);
+
+        let chords, filterFreq, lfoSpeed;
+
+        if (style === 'normal') {
+            // 宇宙階段：巴赫 D小調，詭異，弦樂
+            chords = [146.83, 174.61, 220.00, 293.66, 349.23]; // Dm
+            filterFreq = 600;
+            lfoSpeed = 0.2;
+        } else if (style === 'desperate') {
+            // 無敵階段：絕望，低沈，不和諧 (減五度/三全音)
+            chords = [55.00, 77.78, 82.41, 110.00]; // Low dissonance
+            filterFreq = 300;
+            lfoSpeed = 0.05; // 緩慢沈重
+        } else if (style === 'holy') {
+            // 最終階段：神聖，大調，高頻
+            chords = [293.66, 369.99, 440.00, 587.33, 739.99]; // D Major High
+            filterFreq = 1200;
+            lfoSpeed = 0.4; // 活躍
+        }
+
+        chords.forEach((freq, index) => {
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq;
+            osc.detune.value = (Math.random() - 0.5) * (style === 'desperate' ? 20 : 10); 
+
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = filterFreq;
+            filter.Q.value = 1;
+
+            const gain = audioCtx.createGain();
+            gain.gain.value = 0.2;
+            
+            const lfo = audioCtx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = lfoSpeed + (index * 0.05);
+            const lfoGain = audioCtx.createGain();
+            lfoGain.gain.value = 0.1;
+            lfo.connect(lfoGain);
+            lfoGain.connect(gain.gain);
+            lfo.start();
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(spaceGain);
+            osc.start();
+            spaceOscillators.push({osc, lfo});
+        });
+
+        // 淡入
+        let vol = 0;
+        const fadeInt = setInterval(() => {
+            vol += 0.05;
+            if (vol >= 0.8) { vol = 0.8; clearInterval(fadeInt); }
+            if(spaceGain) spaceGain.gain.value = vol;
+        }, 100);
+    }
+
+    function stopSpaceMusic(fadeOut = true) {
+        if (!spaceGain) return;
+        if (fadeOut) {
+            let vol = spaceGain.gain.value;
+            const fadeInt = setInterval(() => {
+                vol -= 0.05;
+                if (spaceGain) spaceGain.gain.value = vol;
+                if (vol <= 0) {
+                    clearInterval(fadeInt);
+                    cleanupOscillators();
+                }
+            }, 100);
+        } else {
+            cleanupOscillators();
+        }
+    }
+
+    function cleanupOscillators() {
+        spaceOscillators.forEach(o => { 
+            try{ o.osc.stop(); o.lfo.stop(); }catch(e){} 
+        });
+        spaceOscillators = [];
+        if(spaceGain) { try{spaceGain.disconnect();}catch(e){} }
+        spaceGain = null;
+    }
+
+    function stopMP3() {
+        bgmElement.pause();
+        bgmElement.currentTime = 0;
+    }
 
     // --- Three.js 初始化 ---
     const scene = new THREE.Scene();
@@ -400,7 +521,6 @@
     let bossProjectiles = [];
     let playerProjectiles = [];
     
-    // [NEW] 激光物件
     const bossLaser = {
         mesh: null,
         active: false,
@@ -408,6 +528,13 @@
         cooldown: 0,
         duration: 0
     };
+
+    const BOSS_SCALE = 4.0;
+    const GEO_BOSS_BODY = new THREE.BoxGeometry(0.6*BOSS_SCALE, 0.9*BOSS_SCALE, 0.3*BOSS_SCALE);
+    const GEO_BOSS_HEAD = new THREE.BoxGeometry(0.5*BOSS_SCALE, 0.5*BOSS_SCALE, 0.5*BOSS_SCALE);
+    const GEO_BOSS_EYE = new THREE.BoxGeometry(0.1*BOSS_SCALE, 0.1*BOSS_SCALE, 0.05);
+    const GEO_BOSS_WING = new THREE.BoxGeometry(1.8*BOSS_SCALE, 0.8*BOSS_SCALE, 0.1*BOSS_SCALE);
+    const GEO_BOSS_COLLIDER = new THREE.CylinderGeometry(0.5*BOSS_SCALE, 0.5*BOSS_SCALE, 2*BOSS_SCALE);
 
     const matZombieSkin = new THREE.MeshStandardMaterial({ color: 0x2e8b57, roughness: 0.8 });
     const matEliteSkin = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
@@ -420,35 +547,52 @@
         if (STATE.phase2 && !isBoss) return;
 
         const enemyGroup = new THREE.Group();
-        const scale = isBoss ? 4.0 : 1.0;
+        const scale = isBoss ? BOSS_SCALE : 1.0;
         
         const skinMat = isElite ? matEliteSkin.clone() : (isBoss ? matBossSkin.clone() : matZombieSkin.clone());
         const clothesMat = isElite ? matEliteSkin.clone() : (isBoss ? matBossSkin.clone() : matZombieClothes.clone());
         const eyeMat = isBoss ? matBossGlow.clone() : matRedEye.clone();
 
-        const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.6*scale, 0.9*scale, 0.3*scale), clothesMat);
+        let bodyMesh;
+        if (isBoss) {
+            bodyMesh = new THREE.Mesh(GEO_BOSS_BODY, clothesMat);
+        } else {
+            bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.6*scale, 0.9*scale, 0.3*scale), clothesMat);
+        }
         bodyMesh.position.y = (0.9*scale) / 2 + (0.5*scale);
         bodyMesh.castShadow = true;
         enemyGroup.add(bodyMesh);
 
         const headGroup = new THREE.Group();
         headGroup.position.y = (1.4*scale);
-        const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5*scale, 0.5*scale, 0.5*scale), skinMat);
+        
+        let headMesh, leftEye, rightEye;
+        if (isBoss) {
+            headMesh = new THREE.Mesh(GEO_BOSS_HEAD, skinMat);
+            leftEye = new THREE.Mesh(GEO_BOSS_EYE, eyeMat);
+            rightEye = new THREE.Mesh(GEO_BOSS_EYE, eyeMat);
+        } else {
+            headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5*scale, 0.5*scale, 0.5*scale), skinMat);
+            leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.1*scale, 0.1*scale, 0.05), eyeMat);
+            rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.1*scale, 0.1*scale, 0.05), eyeMat);
+        }
+
+        // [FIX] 標記眼睛，方便後續變色
+        leftEye.name = "eye";
+        rightEye.name = "eye";
+
         headGroup.add(headMesh);
-        const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.1*scale, 0.1*scale, 0.05), eyeMat);
         leftEye.position.set(-0.12*scale, 0.05*scale, 0.26*scale);
         headGroup.add(leftEye);
-        const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.1*scale, 0.1*scale, 0.05), eyeMat);
         rightEye.position.set(0.12*scale, 0.05*scale, 0.26*scale);
         headGroup.add(rightEye);
         enemyGroup.add(headGroup);
 
         if (isBoss) {
-            const wingGeo = new THREE.BoxGeometry(1.8*scale, 0.8*scale, 0.1*scale);
             const wingMat = new THREE.MeshStandardMaterial({ color: 0x330000, side: THREE.DoubleSide });
-            const leftWing = new THREE.Mesh(wingGeo, wingMat);
+            const leftWing = new THREE.Mesh(GEO_BOSS_WING, wingMat);
             leftWing.position.set(-1.0*scale, 1.5*scale, -0.3*scale); leftWing.rotation.z = 0.4; leftWing.name = "wingL";
-            const rightWing = new THREE.Mesh(wingGeo, wingMat);
+            const rightWing = new THREE.Mesh(GEO_BOSS_WING, wingMat);
             rightWing.position.set(1.0*scale, 1.5*scale, -0.3*scale); rightWing.rotation.z = -0.4; rightWing.name = "wingR";
             enemyGroup.add(leftWing, rightWing);
             STATE.bossRef = enemyGroup;
@@ -465,7 +609,12 @@
         const dist = isBoss ? 60 : (30 + Math.random() * 40);
         enemyGroup.position.set(Math.sin(angle)*dist, 0, Math.cos(angle)*dist);
 
-        const collider = new THREE.Mesh(new THREE.CylinderGeometry(0.5*scale, 0.5*scale, 2*scale), new THREE.MeshBasicMaterial({visible:false}));
+        let collider;
+        if (isBoss) {
+            collider = new THREE.Mesh(GEO_BOSS_COLLIDER, new THREE.MeshBasicMaterial({visible:false}));
+        } else {
+            collider = new THREE.Mesh(new THREE.CylinderGeometry(0.5*scale, 0.5*scale, 2*scale), new THREE.MeshBasicMaterial({visible:false}));
+        }
         collider.position.y = scale;
         enemyGroup.add(collider);
         enemyGroup.collider = collider; 
@@ -519,6 +668,15 @@
         STATE.phase2 = true;
         STATE.currentStage = STAGE.SPACE_COMBAT_1;
 
+        // [FIX] 切換音樂到宇宙/巴赫風格 (Normal)
+        stopMP3();
+        playSpaceMusic('normal');
+
+        STATE.maxHp = 200;
+        STATE.hp = 200; 
+        STATE.armor = 100; 
+        updateHUD();
+
         const announce = document.getElementById('wave-announce');
         announce.innerText = "VOID REALM";
         announce.style.opacity = 1; announce.style.color = "#00ffff";
@@ -532,15 +690,28 @@
         }
         STATE.enemiesRemaining = 0;
 
-        STATE.hp = 100; STATE.armor = 100; updateHUD();
-
         const boss = STATE.bossRef;
-        // [FIX] 宇宙階段 BOSS 血量減少 1/3 (7500 -> 5000)
         boss.userData.maxHp = 5000; 
         boss.userData.hp = boss.userData.maxHp; 
         boss.userData.speed = CONFIG.flySpeed; 
         boss.position.set(0, 10, -50); 
         document.getElementById('boss-hp-bar').style.width = '100%';
+
+        boss.traverse((child) => {
+            if (child.isMesh && child.material) {
+                // [FIX] 眼睛變色處理
+                if (child.name === "eye") {
+                    child.material.color.set(0x00ffff); // 青色眼睛
+                } else {
+                    child.material.color.set(0xffffee);
+                    if (child.material.emissive) {
+                        child.material.emissive.set(0xffaa00);
+                        child.material.emissiveIntensity = 0.5;
+                    }
+                }
+            }
+        });
+        boss.userData.baseEmissive = 0xffaa00; 
 
         forestGroup.visible = false;
         obstacles = []; 
@@ -564,7 +735,7 @@
         document.getElementById('weapon-slots').innerHTML = `<div class="slot active" id="slot-0"><span>∞</span><div class="w-name" style="color:#0ff">MOON<br>BLADE</div></div>`;
         switchSlot(0);
         
-        alert("進入宇宙階段！BOSS 血量已調整。");
+        alert("進入宇宙階段！HP上限提升至200。\n攻擊BOSS可吸血！");
     }
 
     function spawnChestTrap() {
@@ -588,6 +759,9 @@
         STATE.chestRef = null;
         STATE.currentStage = STAGE.SPACE_BOSS_INVINCIBLE;
         
+        // [FIX] 無敵階段：音樂變為絕望
+        playSpaceMusic('desperate');
+
         const boss = STATE.bossRef;
         boss.userData.isDead = false;
         boss.rotation.x = 0; 
@@ -598,15 +772,17 @@
             if(child.isMesh) {
                 if (child.name === 'wingL' || child.name === 'wingR') {
                     child.material.color.set(0x4b0082); 
+                } else if (child.name === "eye") {
+                    child.material.color.set(0xff00ff); // [FIX] 紫色眼睛
                 } else if (child.material.emissive) {
                     child.material.emissive.setHex(0x800080); 
                     child.material.color.set(0x220022);
+                    child.material.emissiveIntensity = 2.0; 
                 }
             }
         });
         boss.userData.baseEmissive = 0x800080; 
 
-        // [FIX] 復活血量減少 (5000 * 3 = 15000)
         boss.userData.maxHp = 15000;
         boss.userData.hp = boss.userData.maxHp;
         
@@ -619,6 +795,10 @@
     function triggerScriptedDeath() {
         STATE.currentStage = STAGE.GOD_INTERVENTION;
         STATE.isPlaying = false;
+        
+        // [FIX] 劇情殺：停止所有音樂
+        stopSpaceMusic(true);
+
         document.exitPointerLock();
         const overlay = document.getElementById('story-overlay');
         const text = document.getElementById('story-text');
@@ -628,16 +808,13 @@
         setTimeout(() => { text.innerText = "月神：我將賜予你最後的月光之力。\n但你必須證明你的決心。"; }, 4000);
         setTimeout(() => { text.innerText = "月神：甦醒吧！躲避惡魔的激光，\n用你的月牙斬向天空的「虛空之月」！"; }, 7000);
         setTimeout(() => {
-            // [FIX] 復活：狀態全滿
-            STATE.hp = 100;
+            STATE.hp = STATE.maxHp;
             STATE.armor = 100;
             STATE.canFly = true;
             STATE.currentStage = STAGE.ATTACK_MOON;
             updateHUD();
             
-            // [FIX] 復活：將 BOSS 移到遠處，防止貼臉秒殺
             if(STATE.bossRef) {
-                // 將 BOSS 移到玩家前方 150 單位處
                 const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
                 forward.y = 0; forward.normalize();
                 STATE.bossRef.position.copy(playerBody.position).add(forward.multiplyScalar(150));
@@ -660,14 +837,23 @@
     function triggerFinalForm() {
         STATE.currentStage = STAGE.FINAL_COMBAT;
         scene.remove(voidMoon); voidMoon = null;
+        
+        // [FIX] 最終覺醒：音樂變為神聖
+        playSpaceMusic('holy');
+
         inventory = [WEAPON_DEFS.final_moon];
         STATE.currentSlot = 0;
+        
+        STATE.maxHp = 500;
+        STATE.hp = 500;
+        updateHUD();
+
         document.getElementById('weapon-slots').innerHTML = `<div class="slot active" id="slot-0"><span>∞</span><div class="w-name" style="color:#000; background:#fff; text-shadow:none;">FINAL<br>TENSA</div></div>`;
         switchSlot(0);
         document.getElementById('mission-hint').innerText = "真·月牙天衝已覺醒！\nBOSS 無敵已破除，斬殺他！";
         document.getElementById('mission-hint').style.color = "#ff0000";
         document.getElementById('boss-hp-bar').style.background = "#ff0000"; 
-        alert("獲得 [最終月牙] (近戰)！\n現在可以對 BOSS 造成傷害了！");
+        alert("獲得 [最終月牙]！\nHP上限提升至500，攻擊吸血100！\n現在可以對 BOSS 造成傷害了！");
     }
 
     // --- 輸入控制 ---
@@ -678,6 +864,7 @@
     const deathScreen = document.getElementById('death-screen');
 
     document.addEventListener('mousedown', (e) => {
+        if (!STATE.audioInitialized) initAudio(); 
         if (STATE.isPlaying && !STATE.isShopOpen) {
             if (e.button === 0) STATE.isFiring = true;
             if (e.button === 2) useSpecialSkill(); 
@@ -760,21 +947,20 @@
 
     // --- VFX 特效系統 ---
     function createMuzzleFlash() {
-        const flashColor = 0xffaa00;
-        const flashLight = new THREE.PointLight(flashColor, 2, 5);
-        const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffaa }));
+        const flashMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.3, 0.3), 
+            new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+        );
         
         const weaponGroup = weaponContainer.children.find(c => c.visible);
         if (!weaponGroup) return;
 
-        flashLight.position.set(0.1, 0, -1.2);
         flashMesh.position.set(0.1, 0, -1.2);
+        flashMesh.rotation.z = Math.random() * Math.PI; 
         
-        weaponGroup.add(flashLight);
         weaponGroup.add(flashMesh);
 
         setTimeout(() => {
-            weaponGroup.remove(flashLight);
             weaponGroup.remove(flashMesh);
         }, 50);
     }
@@ -843,14 +1029,21 @@
         if (!STATE.isFiring) return;
         const now = Date.now();
         const weapon = inventory[STATE.currentSlot];
-        if (now - STATE.lastShotTime < weapon.rate) return;
+        
+        if (weapon.rate > 5 && now - STATE.lastShotTime < weapon.rate) return;
         STATE.lastShotTime = now;
 
         const model = models[weapon.model];
         if (model) {
             if (weapon.model.includes('moon') || weapon.type === 'melee') {
-                model.rotation.x = -Math.PI / 2; model.rotation.y = -Math.PI / 2;
-                setTimeout(() => { model.rotation.x = 0; model.rotation.y = 0; if(weapon.model.includes('moon')) model.rotation.z = Math.PI/4; }, 150);
+                if (weapon.model === 'final_moon') {
+                    model.rotation.x = -Math.PI / 2 + (Math.random() - 0.5); 
+                    model.rotation.y = -Math.PI / 2 + (Math.random() - 0.5);
+                    setTimeout(() => { model.rotation.x = 0; model.rotation.y = 0; }, 20);
+                } else {
+                    model.rotation.x = -Math.PI / 2; model.rotation.y = -Math.PI / 2;
+                    setTimeout(() => { model.rotation.x = 0; model.rotation.y = 0; if(weapon.model.includes('moon')) model.rotation.z = Math.PI/4; }, 150);
+                }
             } else {
                 model.position.z += 0.15; setTimeout(() => model.position.z -= 0.15, 80);
                 document.body.classList.add('recoil'); setTimeout(() => document.body.classList.remove('recoil'), 80);
@@ -867,6 +1060,32 @@
             fireLaser(weapon);
         } else if (weapon.model === 'rpg') {
              fireProjectile(weapon); 
+        } else if (weapon.model === 'final_moon') {
+            enemies.forEach(enemy => {
+                if (!enemy.userData.isDead) {
+                    const range = weapon.range + (enemy.userData.isBoss ? 10 : 0);
+                    if (enemy.position.distanceTo(playerBody.position) < range) {
+                        const dirToEnemy = enemy.position.clone().sub(playerBody.position).normalize();
+                        const camDir = new THREE.Vector3();
+                        camera.getWorldDirection(camDir);
+                        if (dirToEnemy.dot(camDir) > 0.5) { 
+                            damageEnemy(enemy, weapon.damage, weapon);
+                            const slash = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), new THREE.MeshBasicMaterial({color: 0x000000, side: THREE.DoubleSide, transparent: true, opacity: 0.5}));
+                            slash.position.copy(enemy.position);
+                            slash.lookAt(playerBody.position);
+                            slash.rotation.z = Math.random() * Math.PI;
+                            scene.add(slash);
+                            setTimeout(()=>scene.remove(slash), 50);
+                        }
+                    }
+                }
+            });
+        } else if (weapon.type === 'melee') {
+             enemies.forEach(enemy => {
+                if (!enemy.userData.isDead && enemy.position.distanceTo(playerBody.position) < weapon.range) {
+                     damageEnemy(enemy, weapon.damage, weapon);
+                }
+             });
         } else {
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
@@ -1005,12 +1224,25 @@
         });
     }
 
+    function healPlayer(amount) {
+        STATE.hp = Math.min(STATE.maxHp, STATE.hp + amount);
+        updateHUD();
+    }
+
     function damageEnemy(enemy, dmg, weaponSource) {
         if (enemy.userData.isDead) return;
         if (STATE.currentStage === STAGE.CHEST_TRAP) return;
         if (STATE.currentStage === STAGE.SPACE_BOSS_INVINCIBLE || STATE.currentStage === STAGE.ATTACK_MOON) {
             if (enemy.userData.isBoss) {
                 return;
+            }
+        }
+
+        if (enemy.userData.isBoss) {
+            if (STATE.currentStage === STAGE.SPACE_COMBAT_1) {
+                healPlayer(50); 
+            } else if (STATE.currentStage === STAGE.FINAL_COMBAT) {
+                healPlayer(100); 
             }
         }
 
@@ -1036,7 +1268,6 @@
         }
 
         if (enemy.userData.hp > 0) {
-            // [FIX] 嚴格修復：BOSS 受擊完全不變色，防止卡紅色 BUG
             if (!enemy.userData.isBoss) {
                 if (enemy.userData.flashTimer) clearTimeout(enemy.userData.flashTimer);
                 
@@ -1050,6 +1281,21 @@
                     enemy.traverse((child) => { 
                         if(child.isMesh && child.material && child.material.emissive) {
                             child.material.emissive.setHex(0x000000); 
+                        }
+                    });
+                }, 100);
+            } else {
+                // Boss Flash
+                if (enemy.userData.flashTimer) clearTimeout(enemy.userData.flashTimer);
+                enemy.traverse((child) => {
+                     if(child.isMesh && child.material && child.material.emissive) {
+                         child.material.emissive.setHex(0xffffff);
+                     }
+                });
+                enemy.userData.flashTimer = setTimeout(() => {
+                    enemy.traverse((child) => {
+                        if(child.isMesh && child.material && child.material.emissive) {
+                            child.material.emissive.setHex(enemy.userData.baseEmissive);
                         }
                     });
                 }, 100);
@@ -1067,7 +1313,6 @@
         addMoney(enemy.userData.score);
 
         if (enemy.userData.isBoss) {
-            // 移除激光
             if(bossLaser.mesh) { scene.remove(bossLaser.mesh); bossLaser.mesh = null; bossLaser.active = false; }
             scene.remove(enemy);
             enemies.splice(enemies.indexOf(enemy), 1);
@@ -1103,7 +1348,7 @@
 
     window.buyItem = function(item, cost) {
         if (STATE.money < cost) return;
-        if (item === 'health') STATE.hp = Math.min(100, STATE.hp + 50);
+        if (item === 'health') STATE.hp = Math.min(STATE.maxHp, STATE.hp + 50);
         else if (item === 'armor') STATE.armor = Math.min(100, STATE.armor + 50);
         STATE.money -= cost;
         document.getElementById('money-val').innerText = '$' + STATE.money;
@@ -1112,6 +1357,7 @@
 
     function updateHUD() {
         document.getElementById('hp-val').innerText = Math.floor(STATE.hp);
+        document.getElementById('max-hp-val').innerText = Math.floor(STATE.maxHp);
         document.getElementById('armor-val').innerText = Math.floor(STATE.armor);
     }
 
@@ -1228,7 +1474,10 @@
             enemy.position.y = 0;
         }
         
-        enemy.lookAt(playerBody.position);
+        // [FIX] Boss 旋轉修復：鎖定 Y 軸，避免倒下
+        const lookTarget = playerBody.position.clone();
+        lookTarget.y = enemy.position.y;
+        enemy.lookAt(lookTarget);
     }
 
     function updateGameLogic(delta) {
@@ -1246,19 +1495,15 @@
             if (enemy.userData.isDead) return;
             updateEnemyPhysics(enemy, delta);
             
-            // BOSS 攻擊邏輯
             if (enemy.userData.isBoss) {
-                // [FIX] 宇宙階段改為激光攻擊
                 if (STATE.canFly) {
                     if (!bossLaser.active) {
                         bossLaser.cooldown -= delta;
                         if (bossLaser.cooldown <= 0) {
-                            // 開始發射激光
                             bossLaser.active = true;
-                            bossLaser.duration = 4.0; // 持續 4 秒
-                            bossLaser.targetPos.copy(playerBody.position); // 初始瞄準
+                            bossLaser.duration = 4.0; 
+                            bossLaser.targetPos.copy(playerBody.position); 
                             
-                            // 創建激光 Mesh
                             const geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
                             geo.translate(0, 0.5, 0);
                             geo.rotateX(Math.PI/2);
@@ -1267,34 +1512,25 @@
                             scene.add(bossLaser.mesh);
                         }
                     } else {
-                        // 激光持續中
                         bossLaser.duration -= delta;
-                        
-                        // 激光起點 (Boss 胸口)
                         const startPos = enemy.position.clone().add(new THREE.Vector3(0, 2, 0));
-                        
-                        // 激光終點 (緩慢追蹤玩家，迫使橫向移動)
-                        const lerpFactor = 2.0 * delta; // 追蹤速度
+                        const lerpFactor = 2.0 * delta; 
                         bossLaser.targetPos.lerp(playerBody.position, lerpFactor);
                         
-                        // 延伸激光到遠處
                         const dir = bossLaser.targetPos.clone().sub(startPos).normalize();
                         const endPos = startPos.clone().add(dir.multiplyScalar(300));
                         
-                        // 更新 Mesh
                         bossLaser.mesh.position.copy(startPos);
                         bossLaser.mesh.lookAt(endPos);
                         bossLaser.mesh.scale.z = 300;
                         
-                        // 傷害判定 (簡單的距離檢測)
-                        // 計算玩家到激光射線的距離
                         const playerVec = playerBody.position.clone().sub(startPos);
                         const projection = playerVec.dot(dir);
                         const closestPoint = startPos.clone().add(dir.multiplyScalar(projection));
                         const distToLaser = playerBody.position.distanceTo(closestPoint);
                         
                         if (projection > 0 && distToLaser < 2.0) {
-                            takeDamage(40 * delta); // 持續傷害
+                            takeDamage(40 * delta); 
                         }
 
                         if (bossLaser.duration <= 0) {
@@ -1305,7 +1541,6 @@
                         }
                     }
                 } 
-                // 地面階段保持原有投射物
                 else {
                     enemy.userData.attackCooldown -= delta;
                     if (enemy.userData.attackCooldown <= 0) {
@@ -1362,7 +1597,7 @@
                 }
             }
 
-            if (p.userData.weaponModel === 'moon' || p.userData.weaponModel === 'final_moon') {
+            if (p.userData.weaponModel === 'moon') {
                  enemies.forEach(enemy => {
                      if (!enemy.userData.isDead && p.position.distanceTo(enemy.position) < 4.0) {
                          damageEnemy(enemy, p.userData.damage, {model: 'moon'});
@@ -1399,6 +1634,7 @@
         document.getElementById('death-screen').style.display = 'none';
         
         STATE.hp = 100;
+        STATE.maxHp = 100;
         STATE.armor = 0;
         updateHUD();
         playerBody.position.set(0, 0, 0);
@@ -1439,6 +1675,10 @@
                 STATE.bossRef.userData.baseEmissive = 0xff0000;
             }
         } else {
+            // Restart Forest Music
+            stopSpaceMusic();
+            bgmElement.currentTime = 0;
+            bgmElement.play();
             startWave(STATE.wave);
         }
         
